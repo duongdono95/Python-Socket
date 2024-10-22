@@ -1,141 +1,196 @@
 import socket
 import sys
 
-commands = ["translate", "get", "put", "quit"]
+commands = ["translate", "get", "put", "quit", "delete", "append"]
 
 
 def runClient(portNum, hostName):
-    # create a socket object
     try:
         clientSocket = socket.socket()
     except socket.error as err:
-        print("socket creation failed with error %s" % (err))
-    if clientSocket:
-        print("Trying to connect to host", hostName, "on port", portNum)
-        clientSocket.connect((hostName, portNum))
-        # close the connection
-        print("Connection successful, closing connection")
-        print("Waiting for the server welcome message")
-        sWelcome = clientSocket.recv(1024).decode()
-        # recv to receive data from the server + decode to conver UTF-8 string to python string
-        print(sWelcome)
-        return clientSocket
+        print(f"Socket creation failed with error {err}")
+        sys.exit()
+
+    print("Trying to connect to host", hostName, "on port", portNum)
+    clientSocket.connect((hostName, portNum))
+    print("Connection successful")
+    sWelcome = clientSocket.recv(1024).decode()
+    print(sWelcome)
+    return clientSocket
 
 
-def getValidInput(prompt):
-    while True:
-        userInput = input(prompt)
-        if len(userInput.strip()) == 0:
-            print("Input cannot be empty, please try again.")
+def validateText(prompt):
+    text = input(prompt).strip()
+    if not text:
+        print("\n*****************************************************************")
+        print("* Error: Empty input is not allowed. Please enter a valid text. *")
+        print("*****************************************************************")
+        return
+    return text
+
+
+def handle_translate(clientSocket):
+    clientSocket.send("TRANSLATE".encode())
+    sStatus = clientSocket.recv(1024).decode().strip()
+    if sStatus == "200 OK":
+        print("server: 200 OK")
+        while True:
+            text = validateText("client: ")
+            if not text:
+                continue
+            clientSocket.send(text.encode())
+            if text == ".":
+                break
+
+        while True:
+            data = clientSocket.recv(1024).decode().strip()
+            if not data:
+                break
+            if data != "completed":
+                print(f"server: {data}")
+                clientSocket.send("received".encode())
+            else:
+                print("==== Task has been accomplied ====")
+                break
+
+
+def handle_put(clientSocket):
+    clientSocket.send("PUT".encode())
+    sStatus = clientSocket.recv(1024).decode().strip()
+    if sStatus == "200 OK":
+        print("server: 200 OK")
+        while True:
+            text = validateText("client: ")
+            if not text:
+                continue
+            clientSocket.send(text.encode())
+            if text == ".":
+                break
+            confirmation = clientSocket.recv(1024).decode()
+            if confirmation != "received":
+                print("\n***********************************************************")
+                print("* Error: Client did not confirm reception of the message. *")
+                print("***********************************************************")
+        response = clientSocket.recv(1024).decode().strip()
+        if response == "completed":
+            print("server: messages have been stored.")
+            print("==== Task has been accomplied ====")
         else:
-            return userInput
+            print("server: Error, expected 'completed'.")
 
 
-def translateFunction(clientSocket):
-    messageArr = []
-    print(
-        "Please provide message to translate (end action by entering '.' in a new line)"
-    )
-    # ------------------------- take user's input & send to server -------------------- #
-    while True:
-        message = getValidInput("Your message: ")
-        if message != ".":
-            messageArr.append(message)
-        else:
-            for item in messageArr:
-                clientSocket.send(item.encode())
-                sResponse = clientSocket.recv(1024).decode()
-                if sResponse == "next":
-                    print("**** Server acknowledged the message ****")
-            clientSocket.send("done".encode())
-            print("**** All messages sent ****")
-            break
-    # ------------------------- get translated messages -------------------- #
+def handle_get(clientSocket):
+    clientSocket.send("GET".encode())
+    sStatus = clientSocket.recv(1024).decode()
+    if sStatus == "200 OK":
+        print("server: 200 OK")
+        clientSocket.send("START".encode())
+        while True:
+            data = clientSocket.recv(1024).decode().strip()
+            if not data:
+                break
+            if data != "completed":
+                print(f"server: {data}")
+                clientSocket.send("received".encode())
+            else:
+                print("==== Task has been accomplied ====")
+                break
 
-    while True:
-        translatedMessageArr = []
-        translatedMessage = clientSocket.recv(1024).decode()
-        if translatedMessage != "done":
-            print("Server:", translatedMessage)
-            translatedMessageArr.append(translatedMessage)
-            clientSocket.send("next".encode())
-        else:
-            print("all translated messages:", translatedMessageArr)
-            break
-    return translatedMessageArr
-
-
-def putFunction(clientSocket):
-    print("Please provide message to put (end action by entering '.' in a new line)")
-    messages = []
-    while True:
-        inputMessage = getValidInput("Your Message: ")
-        if inputMessage != ".":
-            messages.append(inputMessage)
-        else:
-            for item in messages:
-                clientSocket.send(item.encode())
-                sResponse = clientSocket.recv(1024).decode()
-                if sResponse == "next":
-                    print("**** Server acknowledged the message ****")
-            clientSocket.send("done".encode())
-            print("**** All Messages have been sent ****")
-            break
-
-
-def getFunction(clientSocket):
-    messages = []
-    sResponse = clientSocket.recv(1024).decode()
-    if sResponse == "GET-ERROR":
-        print(
-            "**** Server: No Messages were saved, please execute PUT command first. ****"
-        )
     else:
-        print("execute")
-        clientSocket.send("start".encode())
-        message = clientSocket.recv(1024).decode()
-        print("execute 2", message)
-        if message != "done":
-            print("execute 3")
-            print("Sever: ", message)
-            messages.append(message)
-            clientSocket.send("next".encode())
+        print("\n***************************************")
+        print(f"* ERROR: {sStatus} *")
+        print("***************************************")
+
+
+def handle_delete(clientSocket):
+    clientSocket.send("DELETE".encode())
+    sStatus = clientSocket.recv(1024).decode()
+    if sStatus == "200 OK":
+        print("server: 200 OK")
+        clientSocket.send("START".encode())
+        while True:
+            data = clientSocket.recv(1024).decode().strip()
+            if not data:
+                break
+            if data == "completed":
+                print("==== Task has been accomplied ====")
+                break
+            else:
+                print("\n***************************************")
+                print(f"* ERROR: Unexpected Error from Delete command *")
+                print("***************************************")
+
+    else:
+        print("\n***************************************")
+        print(f"* ERROR: {sStatus} *")
+        print("***************************************")
+
+
+def handle_append(clientSocket):
+    clientSocket.send("APPEND".encode())
+    sStatus = clientSocket.recv(1024).decode().strip()
+    if sStatus == "200 OK":
+        print("server: 200 OK")
+        while True:
+            text = validateText("client: ")
+            if not text:
+                continue
+            clientSocket.send(text.encode())
+            if text == ".":
+                break
+            confirmation = clientSocket.recv(1024).decode()
+            if confirmation != "received":
+                print("\n***********************************************************")
+                print("* Error: Client did not confirm reception of the message. *")
+                print("***********************************************************")
+        response = clientSocket.recv(1024).decode().strip()
+        if response == "completed":
+            print("server: messages have been stored.")
+            print("==== Task has been accomplied ====")
         else:
-            print("All message received: ", messages)
-    return messages
+            print("server: Error, expected 'completed'.")
 
 
 def mainFunction(clientSocket):
-    try:
-        while True:
-            inputCommand = getValidInput(
-                "Please enter your choice of command (translate/ get/ put/ quit): "
+    while True:
+        print("\n================================================")
+        print("Available commands: TRANSLATE / PUT / GET / DELETE/ APPEND/ QUIT")
+        command = input("Enter command: ").strip().lower()
+        if not command:
+            print("\n*****************************************************************")
+            print("* Error: Command cannot be empty. Please enter a valid command. *")
+            print("*****************************************************************")
+            continue
+
+        if command == "translate":
+            handle_translate(clientSocket)
+        elif command == "put":
+            handle_put(clientSocket)
+        elif command == "get":
+            handle_get(clientSocket)
+        elif command == "delete":
+            print("# DELETE command to clear the stored messages in the server. #")
+            handle_delete(clientSocket)
+        elif command == "append":
+            print(
+                "# APPEND command to append/ store additional text to the previously stored messages in the server #"
             )
-            clientSocket.send(inputCommand.encode().lower())
-
-            sResponse = clientSocket.recv(1024).decode()
-            print("***** SERVER:", sResponse)
-            clientSocket.send("ACK".encode())
-            if sResponse == "200 OK" and inputCommand.lower() in commands:
-                if inputCommand == "quit":
-                    print("Closing Connection.")
-                    clientSocket.close()
-                    break
-                if inputCommand == "translate":
-                    print("==================================================")
-                    translatedMessageArr = translateFunction(clientSocket)
-                    print("==================================================")
-                if inputCommand == "put":
-                    print("==================================================")
-                    putFunction(clientSocket)
-                    print("==================================================")
-                if inputCommand == "get":
-                    print("==================================================")
-                    getFunction(clientSocket)
-                    print("==================================================")
-
-    except socket.error as err:
-        print("socket connection failed with error %s" % (err))
+            handle_append(clientSocket)
+        elif command == "quit":
+            clientSocket.send("QUIT".encode())
+            print("Closing connection.")
+            clientSocket.close()
+            break
+        else:
+            print(
+                "\n******************************************************************************************"
+            )
+            print(
+                "* Error: Invalid command. Please use one of the following: TRANSLATE / PUT / GET / DELETE/ APPEND/ QUIT. *"
+            )
+            print(
+                "******************************************************************************************"
+            )
 
 
 if __name__ == "__main__":
