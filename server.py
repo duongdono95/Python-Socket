@@ -5,161 +5,162 @@ import threading
 commands = ["translate", "get", "put", "quit", "delete", "append"]
 
 
-def handle_quit(address, serverSocket, connection):
-    print(f"{address[0]} requested to quit. Closing connection.")
-    connection.close()
-    serverSocket.close()
-    sys.exit(0)  # Exit the server
+class ClientHandler(threading.Thread):
+    def __init__(self, connection, address, server):
+        super().__init__()
+        self.connection = connection
+        self.address = address
+        self.server = server
+        self.put_messages = []
 
+    def run(self):
+        print(f"server: got connection from client {self.address[0]}")
+        self.connection.send("Server is ready...\n".encode())
 
-def handle_translate(address, connection):
-    connection.send("200 OK".encode())
-    lines = []
-    while True:
-        data = connection.recv(1024).decode().strip()
-        if not data:
-            continue
-        if data == ".":
-            print(f"{address[0]}: Received all messages for translating.")
-            break
-        lines.append(data.upper())
-
-    for line in lines:
-        connection.send((line + "\n").encode())
-        confirmation = connection.recv(1024).decode().strip()
-        if confirmation != "received":
-            print(f"Error: {address[0]} did not confirm reception of the line.")
-            break
-
-    connection.send("completed".encode())
-    print(f"{address[0]}: Translate command handled.")
-
-
-def handle_put(address, connection):
-    connection.send("200 OK\n".encode())
-    received_lines = []
-
-    while True:
-        data = connection.recv(1024).decode().strip()
-        if data == ".":
-            break
-        if data:
-            received_lines.append(data)
-            connection.send("received".encode())
-    connection.send("completed\n".encode())
-    print(f"{address[0]}: Put command handled.")
-    return received_lines
-
-
-def handle_get(address, connection, put_messages):
-    print("put messages:", put_messages)
-    if not put_messages:
-        connection.send("No messages stored in the server.".encode())
-    else:
-        connection.send("200 OK".encode())
-        start = connection.recv(1024).decode()
-        if start == "START":
-            for item in put_messages:
-                connection.send(item.encode())
-                confirmation = connection.recv(1024).decode()
-                print("get confirmation: ", confirmation)
-                if confirmation != "received":
-                    print(
-                        f"Error: {address[0]} did not confirm reception of the message. "
-                    )
-        connection.send("completed".encode())
-        print(f"{address[0]}: Get command handled")
-
-
-def handle_delete(address, connection, put_messages):
-    print("put messages:", put_messages)
-    if not put_messages:
-        connection.send("No messages stored in the server.".encode())
-    else:
-        connection.send("200 OK".encode())
-        start = connection.recv(1024).decode()
-        if start == "START":
-            put_messages = []
-        connection.send("completed".encode())
-        print(f"{address[0]}: Delete command handled")
-        return put_messages
-
-
-def handle_append(address, connection, put_messages):
-    connection.send("200 OK\n".encode())
-    while True:
-        data = connection.recv(1024).decode().strip()
-        if data == ".":
-            break
-        if data:
-            put_messages.append(data)
-            connection.send("received".encode())
-    connection.send("completed\n".encode())
-    print(f"{address[0]}: Append command handled")
-    return put_messages
-
-
-def client_thread(connection, address):
-    print(f"server: got connection from client {address[0]}")
-    connection.send("Server is ready...\n".encode())
-    put_messages = []
-    while True:
-        try:
-            command = connection.recv(1024).decode().strip()
-            if not command:
+        while True:
+            try:
+                command = self.connection.recv(1024).decode().strip()
+                if not command:
+                    break
+                if command.lower() == "translate":
+                    self.handle_translate()
+                elif command.lower() == "put":
+                    self.handle_put()
+                elif command.lower() == "get":
+                    self.handle_get()
+                elif command.lower() == "append":
+                    self.handle_append()
+                elif command.lower() == "delete":
+                    self.handle_delete()
+                elif command.lower() == "quit":
+                    self.handle_quit()
+                    break
+                else:
+                    self.connection.send("400 Command not valid.\n".encode())
+            except ConnectionResetError:
+                print(
+                    f"Client {self.address[0]} disconnected unexpectedly (ConnectionResetError)."
+                )
                 break
-            if command.lower() == "translate":
-                print(f"{address[0]} sends TRANSLATE")
-                handle_translate(address, connection)
-            elif command.lower() == "put":
-                print(f"{address[0]} sends PUT")
-                stored_messages = handle_put(address, connection)
-                put_messages = stored_messages
-            elif command.lower() == "get":
-                print(f"{address[0]} sends GET")
-                handle_get(address, connection, put_messages)
+        self.connection.close()
+        print(f"Connection with client {self.address[0]} closed.")
 
-            elif command.lower() == "append":
-                print(f"{address[0]} sends APPEND")
-                updated_messages = handle_append(address, connection, put_messages)
-                put_messages = updated_messages
-            elif command.lower() == "delete":
-                print(f"{address[0]} sends delete")
-                cleared_put_message = handle_delete(address, connection, put_messages)
-                put_messages = cleared_put_message
-            else:
-                connection.send("400 Command not valid.\n".encode())
-        except ConnectionResetError:
-            print("Client disconnected unexpectedly (ConnectionResetError).")
-            break
-    connection.close()
-    print(f"Connection with client {address[0]} closed.")
+    def handle_translate(self):
+        self.connection.send("200 OK".encode())
+        lines = []
+        while True:
+            data = self.connection.recv(1024).decode().strip()
+            if data == ".":
+                break
+            lines.append(data.upper())
+
+        for line in lines:
+            self.connection.send((line + "\n").encode())
+            confirmation = self.connection.recv(1024).decode().strip()
+            if confirmation != "received":
+                print(
+                    f"Error: {self.address[0]} did not confirm reception of the line."
+                )
+                break
+
+        self.connection.send("completed".encode())
+        print(f"{self.address[0]}: Translate command handled.")
+
+    def handle_put(self):
+        self.connection.send("200 OK\n".encode())
+        received_lines = []
+        while True:
+            data = self.connection.recv(1024).decode().strip()
+            if data == ".":
+                break
+            if data:
+                received_lines.append(data)
+                self.connection.send("received".encode())
+
+        self.put_messages = received_lines
+        self.connection.send("completed\n".encode())
+        print(f"{self.address[0]}: Put command handled.")
+
+    def handle_get(self):
+        if not self.put_messages:
+            self.connection.send("No messages stored in the server.".encode())
+        else:
+            self.connection.send("200 OK".encode())
+            start = self.connection.recv(1024).decode()
+            if start == "START":
+                for item in self.put_messages:
+                    self.connection.send(item.encode())
+                    confirmation = self.connection.recv(1024).decode()
+                    if confirmation != "received":
+                        print(
+                            f"Error: {self.address[0]} did not confirm reception of the message."
+                        )
+            self.connection.send("completed".encode())
+            print(f"{self.address[0]}: Get command handled.")
+
+    def handle_delete(self):
+        if not self.put_messages:
+            self.connection.send("No messages stored in the server.".encode())
+        else:
+            self.connection.send("200 OK".encode())
+            start = self.connection.recv(1024).decode()
+            if start == "START":
+                self.put_messages.clear()
+            self.connection.send("completed".encode())
+            print(f"{self.address[0]}: Delete command handled.")
+
+    def handle_append(self):
+        self.connection.send("200 OK\n".encode())
+        while True:
+            data = self.connection.recv(1024).decode().strip()
+            if data == ".":
+                break
+            if data:
+                self.put_messages.append(data)
+                self.connection.send("received".encode())
+        self.connection.send("completed\n".encode())
+        print(f"{self.address[0]}: Append command handled.")
+
+    def handle_quit(self):
+        print(f"{self.address[0]} requested to quit. Closing connection.")
+        self.connection.send("200 OK\nConnection closed.".encode())
 
 
-def OpenSocket(port):
-    hostName = socket.gethostname()
-    print("host name", hostName)
-    theSocket = socket.socket()
-    theSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    theSocket.bind((hostName, port))
-    print(f"Listening for a connection on port {port}")
-    theSocket.listen()
-    return theSocket
+class Server:
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
+        self.server_socket = None
+
+    def start(self):
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.bind((self.host, self.port))
+        self.server_socket.listen()
+        print("\n===============================================")
+        print(f"Server started on {self.host}:{self.port}")
+        print("Waiting for connections...")
+        print("===============================================\n")
+        while True:
+            connection, address = self.server_socket.accept()
+            # Start a new thread for each client
+            client_handler = ClientHandler(connection, address, self)
+            client_handler.start()
+
+    def stop(self):
+        if self.server_socket:
+            self.server_socket.close()
 
 
 if __name__ == "__main__":
-    portNum = 5991
-    try:
-        serverSocket = OpenSocket(portNum)
-        print("\n================================================")
-        print("Server is running and waiting for connections...")
-        print("================================================\n")
+    host = socket.gethostname()  # Use the actual host machine's IP for external clients
+    port = 5991
+    server = Server(host, port)
 
-        while True:
-            connection, address = serverSocket.accept()
-            threading.Thread(target=client_thread, args=(connection, address)).start()
+    try:
+        server.start()
     except OSError as e:
         print(f"Error: {e}")
     finally:
-        serverSocket.close()
-        print("Server socket closed.")
+        server.stop()
+        print("Server stopped.")
