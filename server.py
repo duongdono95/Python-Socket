@@ -6,7 +6,18 @@ commands = ["translate", "get", "put", "quit", "delete", "append"]
 
 
 class ClientHandler(threading.Thread):
+    """
+    ClientHandler is a thread that handles communication with a single client.
+    """
+
     def __init__(self, connection, address, server):
+        """
+        Initializes the ClientHandler thread with a connection, client address, and server reference.
+
+        :param connection: The socket connection to the client.
+        :param address: The client's IP address.
+        :param server: Reference to the server instance.
+        """
         super().__init__()
         self.connection = connection
         self.address = address
@@ -14,6 +25,9 @@ class ClientHandler(threading.Thread):
         self.put_messages = []
 
     def run(self):
+        """
+        Main execution method of the thread.
+        """
         print(f"server: got connection from client {self.address[0]}")
         self.connection.send("Server is ready...\n".encode())
 
@@ -46,6 +60,9 @@ class ClientHandler(threading.Thread):
         print(f"Connection with client {self.address[0]} closed.")
 
     def handle_translate(self):
+        """
+        Handles the 'translate' command.
+        """
         self.connection.send("200 OK".encode())
         lines = []
         while True:
@@ -67,6 +84,9 @@ class ClientHandler(threading.Thread):
         print(f"{self.address[0]}: Translate command handled.")
 
     def handle_put(self):
+        """
+        Handles the 'put' command by storing messages sent from the client into the `put_messages` list.
+        """
         self.connection.send("200 OK\n".encode())
         received_lines = []
         while True:
@@ -82,6 +102,9 @@ class ClientHandler(threading.Thread):
         print(f"{self.address[0]}: Put command handled.")
 
     def handle_get(self):
+        """
+        Handles the 'get' command by sending back stored messages to the client.
+        """
         if not self.put_messages:
             self.connection.send("No messages stored in the server.".encode())
         else:
@@ -99,6 +122,9 @@ class ClientHandler(threading.Thread):
             print(f"{self.address[0]}: Get command handled.")
 
     def handle_delete(self):
+        """
+        Handles the 'delete' command by clearing the stored messages.
+        """
         if not self.put_messages:
             self.connection.send("No messages stored in the server.".encode())
         else:
@@ -110,6 +136,9 @@ class ClientHandler(threading.Thread):
             print(f"{self.address[0]}: Delete command handled.")
 
     def handle_append(self):
+        """
+        Handles the 'append' command by adding new messages to the already stored messages.
+        """
         self.connection.send("200 OK\n".encode())
         while True:
             data = self.connection.recv(1024).decode().strip()
@@ -122,17 +151,34 @@ class ClientHandler(threading.Thread):
         print(f"{self.address[0]}: Append command handled.")
 
     def handle_quit(self):
+        """
+        Handles the 'quit' command by closing the connection.
+        """
         print(f"{self.address[0]} requested to quit. Closing connection.")
         self.connection.send("200 OK\nConnection closed.".encode())
 
 
 class Server:
+    """
+    Server class that listens for client connections and spawns a new ClientHandler thread for each client.
+    """
+
     def __init__(self, host, port):
+        """
+        Initializes the Server with the given host and port.
+
+        :param host: Hostname or IP address to bind the server.
+        :param port: Port number to bind the server.
+        """
         self.host = host
         self.port = port
         self.server_socket = None
 
     def start(self):
+        """
+        Starts the server, binds the socket to the specified host and port, and listens for client connections.
+        Spawns a new thread for each client connection.
+        """
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server_socket.bind((self.host, self.port))
@@ -148,12 +194,15 @@ class Server:
             client_handler.start()
 
     def stop(self):
+        """
+        Stops the server and closes the server socket.
+        """
         if self.server_socket:
             self.server_socket.close()
 
 
 if __name__ == "__main__":
-    host = socket.gethostname()  # Use the actual host machine's IP for external clients
+    host = socket.gethostname()
     port = 5991
     server = Server(host, port)
 
